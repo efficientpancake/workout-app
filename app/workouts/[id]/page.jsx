@@ -8,7 +8,8 @@ import { useWakeLock } from "../../../lib/useWakeLock";
 import { unlockAudio, beep, say, stopVoice } from "../../../lib/voice";
 
 // Phases: "ready" (before the workout), "running" (a block is on the clock),
-// "between" (a block just ended, waiting for you to tap Start), "done".
+// "between" (a block just ended: either a timed transition, or waiting for
+// you to tap Start), "done".
 // All timing is from timestamps, so pausing, sleeping or reloading never
 // loses time.
 const FRESH = {
@@ -18,6 +19,7 @@ const FRESH = {
   startedAt: 0,
   pausedAt: null,
   pushStartedAt: null,
+  betweenStartedAt: null,
   meters: {},
 };
 
@@ -25,6 +27,9 @@ function clock(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+
+const isEasy = (label) => /^(Base|Walk|Rest)/.test(label);
+const introOf = (b) => b.intro ?? `${b.title}.`;
 
 // Where are we inside an intervals block, t ms after it started?
 function stepAt(block, t) {
@@ -68,9 +73,31 @@ export default function Runner() {
 
   useWakeLock(run.phase === "running" || run.phase === "between");
 
+  // Starts the block the run is pointing at. Called by the Start button and
+  // by the end of a timed transition.
+  const beginBlock = (t = Date.now()) => {
+    const idx = runRef.current.block;
+    const b = workout.blocks[idx];
+    fired.current = new Set();
+    if (b.type === "intervals") {
+      fired.current.add(`s-${idx}-0`);
+      say(b.steps[0].say);
+    } else {
+      const mins = b.sec / 60;
+      say(`Go. ${Number.isInteger(mins) ? mins : mins.toFixed(1)} minutes.`);
+    }
+    setNow(t);
+    setRun((s) => ({ ...s, phase: "running", startedAt: t, pausedAt: null, pushStartedAt: null, betweenStartedAt: null }));
+  };
+  const beginRef = useRef(beginBlock);
+  beginRef.current = beginBlock;
+
   // The coach: runs 10 times a second, fires callouts and beeps once each.
+  const timedBreak = run.phase === "between" && Boolean(workout?.transitionSec);
+  const coaching = (run.phase === "running" && !run.pausedAt) || timedBreak;
+
   useEffect(() => {
-    if (run.phase !== "running" || run.pausedAt) return;
+    if (!coaching) return;
     const once = (k, fn) => {
       if (fired.current.has(k)) return;
       fired.current.add(k);
@@ -81,6 +108,22 @@ export default function Runner() {
       const t0 = Date.now();
       setNow(t0);
       const r = runRef.current;
+
+      // Timed transition between blocks.
+      if (r.phase === "between") {
+        if (!workout.transitionSec || !r.betweenStartedAt) return;
+        const left = workout.transitionSec * 1000 - (t0 - r.betweenStartedAt);
+        const secLeft = Math.ceil(left / 1000);
+        if (left <= 0) {
+          beep(true);
+          beginRef.current(t0);
+        } else {
+          if (secLeft <= 10 && secLeft > 7) once(`t10-${r.block}`, () => say("10 seconds. Get set."));
+          if (secLeft <= 3) once(`tb-${r.block}-${secLeft}`, () => beep());
+        }
+        return;
+      }
+
       if (r.phase !== "running" || r.pausedAt) return;
       const b = workout.blocks[r.block];
       const t = t0 - r.startedAt;
@@ -102,8 +145,17 @@ export default function Runner() {
         if (left <= 0) blockOver = true;
         else {
           const secLeft = Math.ceil(left / 1000);
-          if (secLeft <= 60 && secLeft > 57) once(`m1-${r.block}`, () => say("One minute left."));
-          if (secLeft <= 30 && secLeft > 27) once(`s30-${r.block}`, () => say("30 seconds left."));
+          const fin = b.finisher;
+          if (fin && secLeft <= fin.sec) {
+            once(`f-${r.block}`, () => {
+              beep(true);
+              say(fin.say);
+            });
+          } else if (fin && secLeft <= fin.sec + 10 && secLeft > fin.sec + 7) {
+            once(`f10-${r.block}`, () => say("Finisher in 10 seconds."));
+          }
+          if (!fin && secLeft <= 60 && secLeft > 57) once(`m1-${r.block}`, () => say("One minute left."));
+          if (secLeft <= 30 && secLeft > 27 && !(fin && fin.sec === 30)) once(`s30-${r.block}`, () => say("30 seconds left."));
           if (secLeft <= 3) once(`cb-${r.block}-${secLeft}`, () => beep());
 
           if (r.pushStartedAt && b.push) {
@@ -125,8 +177,18 @@ export default function Runner() {
         const next = workout.blocks[r.block + 1];
         const check = b.logDistance ? "Check your rower distance. " : "";
         if (next) {
-          say(`Time. ${check}Next up, ${next.intro} Tap start when ready.`);
-          setRun((s) => ({ ...s, phase: "between", lastBlock: s.block, block: s.block + 1, pushStartedAt: null }));
+          const when = workout.transitionSec
+            ? `${workout.transitionSec} seconds to get set.`
+            : "Tap start when ready.";
+          say(`Time. ${check}Next up, ${introOf(next)} ${when}`);
+          setRun((s) => ({
+            ...s,
+            phase: "between",
+            lastBlock: s.block,
+            block: s.block + 1,
+            pushStartedAt: null,
+            betweenStartedAt: t0,
+          }));
         } else {
           say(`Time. ${check}Workout done. Nice work.`);
           setRun((s) => ({ ...s, phase: "done", lastBlock: s.block, pushStartedAt: null }));
@@ -137,7 +199,7 @@ export default function Runner() {
     tick();
     const iv = setInterval(tick, 100);
     return () => clearInterval(iv);
-  }, [run.phase, run.pausedAt, run.block, workout]);
+  }, [coaching, run.phase, run.block, workout]);
 
   if (!workout) {
     return (
@@ -152,16 +214,7 @@ export default function Runner() {
 
   const startBlock = () => {
     unlockAudio();
-    fired.current = new Set();
-    const t = Date.now();
-    if (block.type === "intervals") {
-      fired.current.add(`s-${run.block}-0`);
-      say(block.steps[0].say);
-    } else {
-      say(`Go. ${Math.round(block.sec / 60)} minutes.`);
-    }
-    setNow(t);
-    setRun((s) => ({ ...s, phase: "running", startedAt: t, pausedAt: null, pushStartedAt: null }));
+    beginBlock();
   };
 
   const pause = () => {
@@ -201,7 +254,7 @@ export default function Runner() {
   };
 
   const end = () => {
-    if (run.phase === "running" && !window.confirm("End this workout?")) return;
+    if ((run.phase === "running" || run.phase === "between") && !window.confirm("End this workout?")) return;
     stopVoice();
     try {
       localStorage.removeItem(key);
@@ -246,6 +299,7 @@ export default function Runner() {
         <h1 className="run-title">{workout.name}</h1>
         <p className="muted">
           {workout.blocks.length} blocks, about {Math.round(workoutSeconds(workout) / 60)} minutes of work
+          {workout.transitionSec ? `, ${workout.transitionSec} sec breaks between blocks` : ""}
         </p>
         <ol className="block-list">
           {workout.blocks.map((b, i) => (
@@ -263,14 +317,25 @@ export default function Runner() {
 
   // BETWEEN BLOCKS
   if (run.phase === "between") {
+    const breakLeft = workout.transitionSec
+      ? workout.transitionSec * 1000 - (now - (run.betweenStartedAt ?? now))
+      : null;
     return (
       <main className="screen run">
         {header}
         {distanceBox}
+        {breakLeft !== null && (
+          <div className="break">
+            <span>Transition</span>
+            <span className="push-clock">{clock(breakLeft)}</span>
+          </div>
+        )}
         <p className="muted">Next up</p>
         <h1 className="run-title">{block.title}</h1>
         <BlockPreview block={block} />
-        <button className="btn go big" onClick={startBlock}>Start</button>
+        <button className="btn go big" onClick={startBlock}>
+          {breakLeft !== null ? "Start now" : "Start"}
+        </button>
       </main>
     );
   }
@@ -313,28 +378,41 @@ export default function Runner() {
     main = (
       <>
         <p className="muted">{block.title}</p>
-        <div className={`step-label ${step.label === "Walk recovery" ? "calm" : "hard"}`}>{step.label}</div>
+        <div className={`step-label ${isEasy(step.label) ? "calm" : "hard"}`}>{step.label}</div>
+        {step.note && <p className="step-note">{step.note}</p>}
         <div className="countdown">{clock(at.left)}</div>
         <p className="muted">
           Step {at.idx + 1} of {block.steps.length} · Block ends in {clock(blockLeft)}
         </p>
-        <p className="next">{nextStep ? `Next: ${nextStep.label} ${clock(nextStep.sec * 1000)}` : "Last one"}</p>
+        <p className="next">
+          {nextStep
+            ? `Next: ${nextStep.label}${nextStep.note ? `, ${nextStep.note}` : ""} ${clock(nextStep.sec * 1000)}`
+            : "Last one"}
+        </p>
       </>
     );
   } else {
     const left = block.sec * 1000 - t;
+    const fin = block.finisher;
+    const inFinisher = fin && left <= fin.sec * 1000;
     const pushLeft = run.pushStartedAt ? block.push.sec * 1000 - ((run.pausedAt ?? now) - run.pushStartedAt) : null;
     const target = block.beatBlock !== undefined ? run.meters[block.beatBlock] : null;
     main = (
       <>
         <p className="muted">{block.title}</p>
+        {inFinisher && <div className="step-label hard">Finisher: {fin.label}</div>}
         <div className="countdown">{clock(left)}</div>
         {target && <p className="target">Beat {target} m</p>}
-        <ul className="moves">
+        <ul className={`moves ${inFinisher ? "dim" : ""}`}>
           {block.moves.map((m) => (
             <li key={m}>{m}</li>
           ))}
         </ul>
+        {fin && !inFinisher && (
+          <p className="muted">
+            Last {clock(fin.sec * 1000)}: finisher, {fin.label.toLowerCase()}
+          </p>
+        )}
         {block.push &&
           (pushLeft !== null && pushLeft > 0 ? (
             <div className="push-live">
@@ -376,6 +454,11 @@ function BlockPreview({ block }) {
             <li key={m}>{m}</li>
           ))}
         </ul>
+        {block.finisher && (
+          <p className="muted">
+            Finisher: last {clock(block.finisher.sec * 1000)}, {block.finisher.label.toLowerCase()}
+          </p>
+        )}
       </>
     );
   }
@@ -383,7 +466,10 @@ function BlockPreview({ block }) {
     <ol className="block-list">
       {block.steps.map((s, i) => (
         <li key={i}>
-          <span>{s.label}</span>
+          <span>
+            {s.label}
+            {s.note ? <span className="muted small"> · {s.note}</span> : null}
+          </span>
           <span className="muted">{clock(s.sec * 1000)}</span>
         </li>
       ))}

@@ -300,6 +300,31 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.step-note {
+  text-align: center;
+  font-size: 20px;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+
+.moves.dim {
+  opacity: 0.45;
+}
+
+.break {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  border: 2px solid var(--go);
+  border-radius: 44px;
+  height: 88px;
+  padding: 0 32px;
+  font-size: 22px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+
 .run-controls {
   margin-top: auto;
   padding-top: 16px;
