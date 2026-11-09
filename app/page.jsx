@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useWakeLock } from "../lib/useWakeLock";
 
 const STORAGE_KEY = "coach-stopwatch-v1";
 
@@ -36,32 +37,6 @@ function format(ms) {
   const hr = Math.floor(totalSec / 3600);
   const mmss = `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return { main: hr ? `${hr}:${mmss}` : mmss, tenths: `.${tenths}` };
-}
-
-function useWakeLock(active) {
-  const lockRef = useRef(null);
-  useEffect(() => {
-    if (!active || !("wakeLock" in navigator)) return;
-    let cancelled = false;
-    const acquire = async () => {
-      try {
-        const lock = await navigator.wakeLock.request("screen");
-        if (cancelled) lock.release();
-        else lockRef.current = lock;
-      } catch {}
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible") acquire();
-    };
-    acquire();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
-      lockRef.current?.release().catch(() => {});
-      lockRef.current = null;
-    };
-  }, [active]);
 }
 
 export default function Stopwatch() {

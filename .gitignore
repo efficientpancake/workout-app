@@ -2,3 +2,5 @@ node_modules
 .next
 .npm-cache
 .vercel
+.DS_Store
+workout library/

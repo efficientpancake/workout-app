@@ -1,4 +1,5 @@
 import "./globals.css";
+import TabBar from "./TabBar";
 
 export const metadata = {
   title: "Fifth Gear Fitness",
@@ -22,7 +23,10 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <TabBar />
+      </body>
     </html>
   );
 }
