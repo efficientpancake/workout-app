@@ -135,8 +135,9 @@ body {
 .tab {
   flex: 1;
   text-align: center;
+  min-width: 0;
   padding: 18px 0;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--muted);
   text-decoration: none;
@@ -348,4 +349,539 @@ body {
   color: var(--text);
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* ---- Forms, food and today ---- */
+.form-screen form {
+  display: flex;
+  flex-direction: column;
+}
+
+.field select {
+  font: inherit;
+  font-size: 20px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.pair {
+  display: flex;
+  gap: 12px;
+}
+
+.pair label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.pair input,
+.row input,
+.amount-row input {
+  font: inherit;
+  font-size: 22px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+  min-width: 0;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.seg {
+  display: flex;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.seg button {
+  flex: 1;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  padding: 12px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.seg button.on {
+  background: var(--neutral);
+  color: var(--text);
+}
+
+.seg button:disabled {
+  opacity: 0.35;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 18px;
+  margin: 16px 0;
+}
+
+.big-number {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.big-number.over {
+  color: var(--stop);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.btn.small-btn {
+  flex: none;
+  height: auto;
+  padding: 0 20px;
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+.scan-btn {
+  margin: 16px 0 0;
+}
+
+.link-as-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  margin: 8px 0;
+}
+
+.link-btn.plain,
+.link-btn.plain-left {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.link-btn.plain {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.link-btn:disabled {
+  opacity: 0.3;
+}
+
+.error {
+  color: var(--stop);
+  font-size: 18px;
+  margin-top: 16px;
+}
+
+.success {
+  background: var(--surface);
+  border-left: 4px solid var(--go);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 18px;
+}
+
+.success a {
+  color: var(--go);
+  font-weight: 600;
+}
+
+.login form {
+  margin-top: 24px;
+}
+
+.login .btn.big {
+  margin-top: 8px;
+}
+
+/* Scanner */
+.scan-box {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 3 / 4;
+  max-height: 55vh;
+  margin: 12px 0;
+}
+
+.scan-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-line {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 50%;
+  height: 2px;
+  background: var(--stop);
+  box-shadow: 0 0 8px var(--stop);
+}
+
+/* Food lists */
+.list-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 20px 0 4px;
+}
+
+.food-list,
+.entry-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.food-list .fl-main {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 2px;
+  cursor: pointer;
+}
+
+.fl-name {
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.entry-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.entry-list li > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.entry-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.remove {
+  font: inherit;
+  font-size: 15px;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+/* Add food */
+.add-food {
+  display: flex;
+  flex-direction: column;
+}
+
+.food-name {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 12px 0 4px;
+}
+
+.amount-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.amount-row input {
+  width: 110px;
+  flex: none;
+}
+
+.amount-row .seg {
+  flex: 1;
+  margin: 0;
+}
+
+.nutrient-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 20px;
+  font-size: 17px;
+}
+
+.nutrient-grid div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.nutrient-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+.nutrient-inputs .field {
+  margin: 8px 0;
+}
+
+.nutrient-inputs input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Today */
+.day-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.day-nav .run-title {
+  font-size: 24px;
+  text-align: center;
+}
+
+.bar {
+  margin: 12px 0;
+}
+
+.bar-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 17px;
+  margin-bottom: 6px;
+}
+
+.bar-track {
+  height: 10px;
+  background: var(--neutral);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--go);
+  border-radius: 5px;
+}
+
+.bar-fill.over {
+  background: var(--stop);
+}
+
+.form-screen .btn.big {
+  margin-top: 12px;
+}
+
+.form-screen form.row {
+  flex-direction: row;
+}
+
+/* Favorites and one-tap add */
+.food-list li.with-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.food-list li.with-actions .fl-main {
+  border-bottom: 0;
+}
+
+.star {
+  font: inherit;
+  font-size: 26px;
+  line-height: 1;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  padding: 10px 6px;
+  cursor: pointer;
+}
+
+.star.on {
+  color: #f2c94c;
+}
+
+.quick-add {
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  background: var(--go);
+  color: #0b1f14;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.quick-add:active {
+  transform: scale(0.95);
+}
+
+/* Coach */
+.coach h2 {
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+
+.coach ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.coach li {
+  font-size: 18px;
+  line-height: 1.45;
+  padding: 10px 0 10px 14px;
+  border-left: 4px solid var(--neutral);
+  margin: 8px 0;
+}
+
+.coach li.good {
+  border-left-color: var(--go);
+}
+
+.coach li.warn {
+  border-left-color: var(--stop);
+}
+
+.coach li.tip {
+  border-left-color: #f2c94c;
+}
+
+/* Plan */
+.week-title {
+  font-size: 19px;
+  margin: 0;
+  text-align: center;
+}
+
+.plan-day.is-today {
+  box-shadow: inset 0 0 0 2px var(--go);
+}
+
+.plan-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.plan-day-head h2 {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.plan-day-head .over {
+  color: var(--stop);
+}
+
+.plan-day .entry-right {
+  gap: 8px;
+}
+
+.plan-day {
+  margin: 10px 0;
+  padding: 14px 16px;
+}
+
+.plan-day .quick-add {
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.link-btn.inline {
+  display: inline;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Shopping list */
+.check-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+
+.check-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 2px;
+  cursor: pointer;
+}
+
+.check-list .box {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--muted);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.check-list .checked .box {
+  background: var(--go);
+  border-color: var(--go);
+  color: #0b1f14;
+}
+
+.check-list .checked .check-text {
+  opacity: 0.5;
+}
+
+.check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
