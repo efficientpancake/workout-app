@@ -128,3 +128,22 @@ create policy "own food" on public.food_entries
 
 create policy "own activities" on public.activities
   for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+
+-- Two-step sign-in, enforced by the database too: a password alone can't read
+-- or change anything. Every table also needs a session that passed the
+-- authenticator code (aal2). "as restrictive" means this rule must pass on top
+-- of the "own ..." rules above.
+create policy "needs code" on public.profiles as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+create policy "needs code" on public.food_entries as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+create policy "needs code" on public.favorites as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+create policy "needs code" on public.activities as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+create policy "needs code" on public.meals as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+create policy "needs code" on public.plan_items as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+create policy "needs code" on public.shopping_items as restrictive to authenticated
+  using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');

@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 
-// Every page needs a signed-in user whose email is on ALLOWED_EMAIL.
+// Every page needs a signed-in user whose email is on ALLOWED_EMAIL and who
+// has entered their authenticator code.
 // Without the Supabase keys (localhost before setup), the app stays open and
 // saves to the browser instead.
 export async function middleware(request) {
@@ -50,8 +51,16 @@ export async function middleware(request) {
     return isLogin ? response : redirect("/login", true);
   }
 
-  if (!user && !isLogin) return redirect("/login");
-  if (user && isLogin) return redirect("/");
+  if (!user) return isLogin ? response : redirect("/login");
+
+  // Two-step sign-in: a password alone isn't enough. Until the session has
+  // passed the authenticator code (aal2), every page sends you back to the
+  // login screen, which asks for the code (or sets up the authenticator the
+  // first time).
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const passedCode = aal?.currentLevel === "aal2";
+  if (!passedCode) return isLogin ? response : redirect("/login");
+  if (isLogin) return redirect("/");
   return response;
 }
 
