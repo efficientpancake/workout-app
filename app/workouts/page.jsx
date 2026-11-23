@@ -4,7 +4,11 @@ import { WORKOUTS, workoutSeconds } from "../../lib/workouts";
 export default function Workouts() {
   return (
     <main className="screen">
-      <h1 className="run-title">Workouts</h1>
+      <h1 className="run-title">Train</h1>
+      <Link href="/stopwatch" className="btn go big link-as-btn">
+        Stopwatch
+      </Link>
+      <h2 className="list-title">Workouts</h2>
       <ul className="workout-list">
         {WORKOUTS.map((w) => (
           <li key={w.id}>

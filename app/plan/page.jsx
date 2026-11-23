@@ -17,6 +17,7 @@ import {
 } from "../../lib/db";
 import { describeAmount, totalsFor } from "../../lib/nutrition";
 import { mealToFood, mealTotals, planItemFood, shiftDate, weekDays, weekStart } from "../../lib/meals";
+import { draftWeek, swapFor } from "../../lib/draft";
 
 // Plan: your meals, the week ahead, and the shopping list.
 const SECTIONS = [
@@ -37,6 +38,7 @@ export default function Plan() {
   const [shopping, setShopping] = useState([]);
   const [mode, setMode] = useState(null); // { type: "pick", day } or { type: "meal", meal }
   const [status, setStatus] = useState("");
+  const [showPast, setShowPast] = useState(false);
 
   const loadMeals = () => listMeals().then(setMeals).catch((e) => setStatus(e.message));
 
@@ -136,6 +138,50 @@ export default function Plan() {
     }
   };
 
+  const target = profile?.calorie_target;
+  const dayCalories = (day) =>
+    plan
+      .filter((p) => p.plan_on === day)
+      .reduce((a, p) => {
+        const food = planItemFood(p, mealsById);
+        return a + (food ? totalsFor(food, p.amount, p.unit).calories || 0 : 0);
+      }, 0);
+
+  // Fills the empty days from today on (or the whole week, if it's ahead)
+  // with your saved meals, staying under your target.
+  const pastDays = weekDays(monday).filter((d) => d < today);
+  const openDays = weekDays(monday).filter((d) => d >= today && !plan.some((p) => p.plan_on === d));
+  const draft = async () => {
+    setStatus("");
+    const picks = draftWeek(openDays, meals, target);
+    const rows = Object.entries(picks).flatMap(([day, ids]) =>
+      ids.map((id) => ({ plan_on: day, meal_id: id, food: null, amount: 1, unit: "serving", logged: false }))
+    );
+    if (!rows.length) {
+      setStatus("None of your meals fit under your target. Try adding a smaller meal.");
+      return;
+    }
+    try {
+      const made = [];
+      for (const r of rows) made.push(await addPlanItem(r));
+      setPlan((list) => [...list, ...made]);
+      setStatus(`Planned ${Object.values(picks).filter((ids) => ids.length).length} days. Tap Swap on any meal you don't want.`);
+    } catch (e) {
+      setStatus(e.message);
+    }
+  };
+
+  const swap = async (item) => {
+    const next = swapFor(item.meal_id, meals, dayCalories(item.plan_on), target);
+    if (!next) return;
+    try {
+      await updatePlanItem(item.id, { meal_id: next.id });
+      setPlan((list) => list.map((p) => (p.id === item.id ? { ...p, meal_id: next.id } : p)));
+    } catch (e) {
+      setStatus(e.message);
+    }
+  };
+
   const logMeal = async (meal) => {
     const food = mealToFood(meal);
     try {
@@ -171,21 +217,61 @@ export default function Plan() {
             </button>
           </div>
 
-          {weekDays(monday).map((day) => {
+          {openDays.length === 0 && sunday <= shiftDate(today, 1) && (
+            <div className="draft">
+              <button className="btn go" onClick={() => setMonday(shiftDate(monday, 7))}>
+                Plan next week
+              </button>
+            </div>
+          )}
+
+          {openDays.length > 0 && (
+            <div className="draft">
+              {!target ? (
+                <p className="muted">
+                  <a className="link-btn inline" href="/profile">Set your target</a> and the app can plan your week for you.
+                </p>
+              ) : meals.length === 0 ? (
+                <p className="muted">
+                  Save a few meals under Meals and the app can plan your week for you, under {target.toLocaleString()} cal a day.
+                </p>
+              ) : (
+                <>
+                  <button className="btn go" onClick={draft}>
+                    Draft my week
+                  </button>
+                  <p className="muted small">
+                    Fills the {openDays.length === 1 ? "empty day" : `${openDays.length} empty days`} with your meals, under{" "}
+                    {target.toLocaleString()} cal a day.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {pastDays.length > 0 && !showPast && (
+            <button className="link-btn plain-left" onClick={() => setShowPast(true)}>
+              Show {pastDays.length === 1 ? "yesterday" : `the ${pastDays.length} earlier days`}
+            </button>
+          )}
+
+          {weekDays(monday).filter((day) => showPast || day >= today).map((day) => {
             const rows = plan
               .filter((p) => p.plan_on === day)
               .map((p) => ({ item: p, food: planItemFood(p, mealsById) }))
               .filter((r) => r.food);
             const planned = rows.reduce((a, r) => a + (totalsFor(r.food, r.item.amount, r.item.unit).calories || 0), 0);
-            const target = profile?.calorie_target;
             return (
               <div key={day} className={`card plan-day ${day === today ? "is-today" : ""}`}>
                 <div className="plan-day-head">
                   <h2>{day === today ? `Today, ${dayName(day, { weekday: "long" })}` : dayName(day, { weekday: "long", day: "numeric" })}</h2>
                   {rows.length > 0 && (
-                    <span className={`muted small ${target && planned > target ? "over" : ""}`}>
+                    <span
+                      className={`tag ${target ? (planned > target ? "over" : "under") : ""}`}
+                      aria-label={`${Math.round(planned)} of ${target || "?"} calories planned`}
+                    >
                       {Math.round(planned).toLocaleString()}
-                      {target ? ` of ${target.toLocaleString()}` : ""} cal
+                      <small>{target ? `/ ${target.toLocaleString()}` : "cal"}</small>
                     </span>
                   )}
                 </div>
@@ -203,10 +289,15 @@ export default function Plan() {
                         <div className="entry-right">
                           {item.logged ? (
                             <span className="muted small">Logged</span>
+                          ) : day <= today ? (
+                            <button className="quick-add" onClick={() => logIt(item, food)}>
+                              Log it
+                            </button>
                           ) : (
-                            day <= today && (
-                              <button className="quick-add" onClick={() => logIt(item, food)}>
-                                Log it
+                            item.meal_id &&
+                            meals.length > 1 && (
+                              <button className="swap" onClick={() => swap(item)} aria-label={`Swap ${food.name} for another meal`}>
+                                Swap
                               </button>
                             )
                           )}
@@ -218,7 +309,7 @@ export default function Plan() {
                     ))}
                   </ul>
                 )}
-                <button className="link-btn plain-left" onClick={() => setMode({ type: "pick", day })}>
+                <button className="link-btn plain-left add-to-day" onClick={() => setMode({ type: "pick", day })}>
                   + Add to {dayName(day, { weekday: "long" })}
                 </button>
               </div>

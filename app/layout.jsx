@@ -3,7 +3,7 @@ import TabBar from "./TabBar";
 
 export const metadata = {
   title: "Fifth Gear Fitness",
-  description: "One tap to the clock.",
+  description: "Plan your week, log your food, run your workout.",
   appleWebApp: {
     capable: true,
     title: "Fifth Gear",
@@ -17,7 +17,7 @@ export const viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#111214",
+  themeColor: "#1f3a2e",
 };
 
 export default function RootLayout({ children }) {

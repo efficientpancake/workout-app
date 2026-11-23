@@ -3,25 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  addFood,
   caloriesByDay,
   deleteFood,
   getProfile,
   listFavorites,
   listFood,
+  listMeals,
+  listPlan,
   localDate,
   recentFoods,
+  updatePlanItem,
 } from "../../lib/db";
-import { describeAmount } from "../../lib/nutrition";
+import { describeAmount, totalsFor } from "../../lib/nutrition";
 import { coachTips } from "../../lib/coach";
+import { planItemFood, shiftDate } from "../../lib/meals";
+import { dayStatus } from "../../lib/draft";
 
-// One day at a glance: calories eaten against your target, protein and fiber
-// against your goals, and everything you logged.
-function shiftDate(date, days) {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return localDate(d);
-}
-
+// One day at a glance: calories left in big type, what's planned next, and
+// everything you logged.
 const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
 
 export default function Today() {
@@ -30,21 +30,31 @@ export default function Today() {
   const [entries, setEntries] = useState([]);
   const [byDay, setByDay] = useState({});
   const [foods, setFoods] = useState([]);
+  const [planned, setPlanned] = useState([]);
+  const [mealsById, setMealsById] = useState(new Map());
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setDate(new URLSearchParams(window.location.search).get("date") || localDate());
     getProfile().then(setProfile).catch((e) => setError(e.message));
+    listMeals()
+      .then((m) => setMealsById(new Map(m.map((x) => [x.id, x]))))
+      .catch(() => {});
     // Your usual foods, for the coach's top-up suggestions.
     Promise.all([listFavorites(), recentFoods(50)])
       .then(([fav, rec]) => setFoods([...fav, ...rec]))
       .catch(() => {});
   }, []);
 
+  const loadDay = (d) => {
+    listFood(d).then(setEntries).catch((e) => setError(e.message));
+    listPlan(d, d).then(setPlanned).catch(() => {});
+    caloriesByDay(shiftDate(d, -40), d).then(setByDay).catch(() => {});
+  };
+
   useEffect(() => {
-    if (!date) return;
-    listFood(date).then(setEntries).catch((e) => setError(e.message));
-    caloriesByDay(shiftDate(date, -40), date).then(setByDay).catch(() => {});
+    if (date) loadDay(date);
   }, [date]);
 
   const go = (days) => {
@@ -65,6 +75,18 @@ export default function Today() {
     }
   };
 
+  const logPlanned = async (item, food) => {
+    setBusy(true);
+    try {
+      await addFood({ eaten_on: item.plan_on, food, amount: item.amount, unit: item.unit, ...totalsFor(food, item.amount, item.unit) });
+      await updatePlanItem(item.id, { logged: true });
+      loadDay(date);
+    } catch (e) {
+      setError(e.message);
+    }
+    setBusy(false);
+  };
+
   if (!date || profile === undefined) return <main className="screen" />;
 
   const isToday = date === localDate();
@@ -75,41 +97,77 @@ export default function Today() {
   const eaten = Math.round(sum(entries, "calories"));
   const target = profile?.calorie_target;
   const left = target ? target - eaten : null;
+  const status = target ? dayStatus(eaten, target) : "under";
+
+  const next = planned
+    .filter((p) => !p.logged)
+    .map((p) => ({ item: p, food: planItemFood(p, mealsById) }))
+    .find((r) => r.food);
+  const nextCal = next ? totalsFor(next.food, next.item.amount, next.item.unit).calories : null;
 
   return (
     <main className="screen form-screen">
       <div className="day-nav">
-        <button className="link-btn plain-left" onClick={() => go(-1)} aria-label="Previous day">‹ Back</button>
+        <button className="link-btn plain-left" onClick={() => go(-1)} aria-label="Previous day">
+          ‹ Back
+        </button>
         <h1 className="run-title">{label}</h1>
-        <button
-          className="link-btn plain-left"
-          onClick={() => go(1)}
-          disabled={isToday}
-          aria-label="Next day"
-        >
+        <button className="link-btn plain-left" onClick={() => go(1)} disabled={isToday} aria-label="Next day">
           Next ›
         </button>
       </div>
 
       {!profile ? (
         <div className="card">
-          <p className="big-number">Set your goals</p>
-          <p className="muted">Enter your stats once and the app works out your daily calorie target.</p>
-          <Link className="btn go big link-as-btn" href="/profile">Set up</Link>
+          <p className="big-number">Set your target</p>
+          <p className="muted">Enter your stats once and the app works out how much to eat each day to lose weight.</p>
+          <Link className="btn go big link-as-btn" href="/profile">
+            Set up
+          </Link>
         </div>
       ) : (
-        <div className="card">
-          <p className={`big-number ${left < 0 ? "over" : ""}`}>
-            {left >= 0 ? `${left.toLocaleString()} calories left` : `${Math.abs(left).toLocaleString()} calories over`}
+        <section className="left-board" aria-label="Calories">
+          <p className="left-label">{left >= 0 ? "Calories left" : "Calories over"}</p>
+          <p className={`left-number ${left < 0 ? "over" : ""}`}>
+            {Math.abs(left).toLocaleString()}
+            <span className="unit">cal</span>
           </p>
-          <Bar value={eaten} goal={target} label="Eaten" unit="" />
-          <Bar value={sum(entries, "protein")} goal={profile.protein_target} label="Protein" unit=" g" />
-          <Bar value={sum(entries, "fiber")} goal={profile.fiber_target} label="Fiber" unit=" g" />
-          <p className="muted small">
-            Carbs {Math.round(sum(entries, "carbs"))} g · Sugar {Math.round(sum(entries, "sugar"))} g · Fat{" "}
-            {Math.round(sum(entries, "fat"))} g
+          <div className="day-bar" role="img" aria-label={`${eaten} of ${target} calories eaten`}>
+            <span className={status} style={{ width: `${Math.min(100, (eaten / target) * 100)}%` }} />
+          </div>
+          <p className="left-meta">
+            <span>{eaten.toLocaleString()} eaten</span>
+            <span>Target {target.toLocaleString()}</span>
           </p>
-        </div>
+          <div className="macros">
+            <Bar className="macro" value={sum(entries, "protein")} goal={profile.protein_target} label="Protein" unit=" g" />
+            <Bar className="macro" value={sum(entries, "fiber")} goal={profile.fiber_target} label="Fiber" unit=" g" />
+          </div>
+        </section>
+      )}
+
+      {next && (
+        <section className="card next-up">
+          <h2>Next on your plan</h2>
+          <div className="next-row">
+            <p className="next-name">{next.food.name}</p>
+            {nextCal != null && (
+              <span className="tag">
+                {nextCal.toLocaleString()}
+                <small>cal</small>
+              </span>
+            )}
+          </div>
+          <p className="muted small">{describeAmount(next.food, next.item.amount, next.item.unit)}</p>
+          <div className="next-actions">
+            <button className="btn go" disabled={busy} onClick={() => logPlanned(next.item, next.food)}>
+              {busy ? "Logging..." : "Log it"}
+            </button>
+            <Link className="link-btn plain-left" href="/plan">
+              See the plan
+            </Link>
+          </div>
+        </section>
       )}
 
       <Link className="btn go big link-as-btn" href={isToday ? "/food" : `/food?date=${date}`}>
@@ -117,7 +175,7 @@ export default function Today() {
       </Link>
 
       {profile && (
-        <div className="card coach">
+        <section className="card coach">
           <h2>Coach</h2>
           <ul>
             {coachTips({ profile, entries, byDay, foods, date, isToday }).map((t, i) => (
@@ -126,51 +184,61 @@ export default function Today() {
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
+      <h2 className="list-title">Eaten {isToday ? "today" : "this day"}</h2>
       {entries.length > 0 ? (
-        <ul className="entry-list">
-          {entries.map((e) => (
-            <li key={e.id}>
-              <div>
-                <span className="fl-name">{e.food.name}</span>
-                <span className="muted small">{describeAmount(e.food, e.amount, e.unit)}</span>
-              </div>
-              <div className="entry-right">
-                <span>{Math.round(e.calories || 0)}</span>
-                <button className="remove" onClick={() => remove(e)} aria-label={`Remove ${e.food.name}`}>
-                  Remove
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="card">
+          <ul className="entry-list">
+            {entries.map((e) => (
+              <li key={e.id}>
+                <div>
+                  <span className="fl-name">{e.food.name}</span>
+                  <span className="muted small">{describeAmount(e.food, e.amount, e.unit)}</span>
+                </div>
+                <div className="entry-right">
+                  <span>{Math.round(e.calories || 0)}</span>
+                  <button className="remove" onClick={() => remove(e)} aria-label={`Remove ${e.food.name}`}>
+                    Remove
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            Carbs {Math.round(sum(entries, "carbs"))} g · Sugar {Math.round(sum(entries, "sugar"))} g · Fat{" "}
+            {Math.round(sum(entries, "fat"))} g
+          </p>
+        </div>
       ) : (
         <p className="muted">Nothing logged {isToday ? "yet today" : "this day"}.</p>
       )}
 
       {profile && (
-        <Link className="link-btn plain" href="/profile">Edit your goals</Link>
+        <Link className="link-btn plain" href="/profile">
+          Edit your target
+        </Link>
       )}
       {error && <p className="error">{error}</p>}
     </main>
   );
 }
 
-function Bar({ value, goal, label, unit }) {
+function Bar({ value, goal, label, unit, className = "" }) {
   const pct = goal ? Math.min(100, (value / goal) * 100) : 0;
   return (
-    <div className="bar">
+    <div className={`bar ${className}`}>
       <div className="bar-text">
         <span>{label}</span>
         <span>
           {Math.round(value).toLocaleString()}
-          {unit} {goal ? `of ${goal.toLocaleString()}${unit}` : ""}
+          {goal ? ` / ${goal.toLocaleString()}` : ""}
+          {unit}
         </span>
       </div>
       <div className="bar-track">
-        <div className={`bar-fill ${value > goal && label === "Eaten" ? "over" : ""}`} style={{ width: `${pct}%` }} />
+        <div className="bar-fill" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
