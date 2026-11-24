@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  addActivity,
   addFood,
   caloriesByDay,
+  deleteActivity,
   deleteFood,
   getProfile,
   listFavorites,
+  listActivities,
   listFood,
   listMeals,
   listPlan,
@@ -15,9 +18,9 @@ import {
   recentFoods,
   updatePlanItem,
 } from "../../lib/db";
-import { describeAmount, totalsFor } from "../../lib/nutrition";
+import { EFFORT, describeAmount, estimateBurn, totalsFor } from "../../lib/nutrition";
 import { coachTips } from "../../lib/coach";
-import { planItemFood, shiftDate } from "../../lib/meals";
+import { planItemFood, shiftDate, weekStart } from "../../lib/meals";
 import { dayStatus } from "../../lib/draft";
 
 // One day at a glance: calories left in big type, what's planned next, and
@@ -33,6 +36,8 @@ export default function Today() {
   const [planned, setPlanned] = useState([]);
   const [mealsById, setMealsById] = useState(new Map());
   const [busy, setBusy] = useState(false);
+  const [moves, setMoves] = useState([]);
+  const [week, setWeek] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -51,6 +56,13 @@ export default function Today() {
     listFood(d).then(setEntries).catch((e) => setError(e.message));
     listPlan(d, d).then(setPlanned).catch(() => {});
     caloriesByDay(shiftDate(d, -40), d).then(setByDay).catch(() => {});
+    loadMoves(d);
+  };
+
+  const loadMoves = (d) => {
+    listActivities(d, d).then(setMoves).catch(() => {});
+    const monday = weekStart(d);
+    listActivities(monday, shiftDate(monday, 6)).then(setWeek).catch(() => {});
   };
 
   useEffect(() => {
@@ -174,6 +186,16 @@ export default function Today() {
         Add food
       </Link>
 
+      <Exercise
+        date={date}
+        isToday={isToday}
+        moves={moves}
+        week={week}
+        weight={profile?.weight_kg}
+        onChange={() => loadMoves(date)}
+        onError={setError}
+      />
+
       {profile && (
         <section className="card coach">
           <h2>Coach</h2>
@@ -222,6 +244,144 @@ export default function Today() {
       )}
       {error && <p className="error">{error}</p>}
     </main>
+  );
+}
+
+// "1 hr 5 min", "45 min".
+function duration(mins) {
+  const m = Math.round(mins);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+// What you did this day: workouts save themselves, anything else you add.
+function Exercise({ date, isToday, moves, week, weight, onChange, onError }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", minutes: "", effort: "moderate" });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const mins = moves.reduce((a, m) => a + (Number(m.minutes) || 0), 0);
+  const burn = moves.reduce((a, m) => a + (Number(m.calories) || 0), 0);
+  const weekMins = week.reduce((a, m) => a + (Number(m.minutes) || 0), 0);
+
+  const save = async (e) => {
+    e.preventDefault();
+    const minutes = Number(form.minutes);
+    if (!form.name.trim() || !minutes) return;
+    setSaving(true);
+    try {
+      const met = EFFORT.find((x) => x.id === form.effort)?.met;
+      await addActivity({
+        done_on: date,
+        name: form.name.trim(),
+        minutes,
+        calories: estimateBurn(minutes, weight, met),
+        source: "manual",
+      });
+      setForm({ name: "", minutes: "", effort: "moderate" });
+      setAdding(false);
+      onChange();
+    } catch (err) {
+      onError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const remove = async (m) => {
+    if (!window.confirm(`Remove ${m.name}?`)) return;
+    try {
+      await deleteActivity(m.id);
+      onChange();
+    } catch (err) {
+      onError(err.message);
+    }
+  };
+
+  return (
+    <section className="card exercise">
+      <div className="exercise-head">
+        <h2>Exercise</h2>
+        {!adding && (
+          <button className="link-btn plain-left" onClick={() => setAdding(true)}>
+            Add exercise
+          </button>
+        )}
+      </div>
+
+      {moves.length > 0 ? (
+        <>
+          <p className="exercise-total">
+            {duration(mins)}
+            {burn > 0 && <span className="muted"> · about {burn.toLocaleString()} cal burned</span>}
+          </p>
+          <ul className="entry-list">
+            {moves.map((m) => (
+              <li key={m.id}>
+                <div>
+                  <span className="fl-name">{m.name}</span>
+                  <span className="muted small">
+                    {duration(m.minutes || 0)}
+                    {m.calories ? ` · about ${Math.round(m.calories)} cal` : ""}
+                  </span>
+                </div>
+                <button className="remove" onClick={() => remove(m)} aria-label={`Remove ${m.name}`}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        !adding && (
+          <p className="muted">
+            Nothing {isToday ? "yet today" : "this day"}. Finish a workout and it shows up here.
+          </p>
+        )
+      )}
+
+      {adding && (
+        <form onSubmit={save}>
+          <label className="field">
+            <span>What did you do?</span>
+            <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Walk" autoFocus />
+          </label>
+          <label className="field">
+            <span>Minutes</span>
+            <input
+              inputMode="numeric"
+              value={form.minutes}
+              onChange={(e) => set("minutes", e.target.value.replace(/\D/g, ""))}
+              placeholder="e.g. 30"
+            />
+          </label>
+          <label className="field">
+            <span>How hard</span>
+            <select value={form.effort} onChange={(e) => set("effort", e.target.value)}>
+              {EFFORT.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="next-actions">
+            <button className="btn go" disabled={saving || !form.name.trim() || !Number(form.minutes)}>
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button type="button" className="link-btn plain-left" onClick={() => setAdding(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {week.length > 0 && (
+        <p className="muted small exercise-week">
+          This week: {week.length} {week.length === 1 ? "session" : "sessions"}, {duration(weekMins)}
+        </p>
+      )}
+    </section>
   );
 }
 

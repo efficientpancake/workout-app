@@ -6,6 +6,8 @@ import Link from "next/link";
 import { getWorkout, blockSeconds, workoutSeconds } from "../../../lib/workouts";
 import { useWakeLock } from "../../../lib/useWakeLock";
 import { unlockAudio, beep, say, stopVoice } from "../../../lib/voice";
+import { addActivity, getProfile, localDate } from "../../../lib/db";
+import { estimateBurn } from "../../../lib/nutrition";
 
 // Phases: "ready" (before the workout), "running" (a block is on the clock),
 // "between" (a block just ended: either a timed transition, or waiting for
@@ -21,7 +23,41 @@ const FRESH = {
   pushStartedAt: null,
   betweenStartedAt: null,
   meters: {},
+  saved: false,
+  // Real time on the clock, so skipped blocks and steps don't count.
+  blockRealStart: null,
+  activeMs: 0,
 };
+
+// Workouts shorter than this aren't saved when you end early.
+const MIN_SAVE_MINUTES = 5;
+
+// Minutes you actually spent in blocks: not breaks, pauses, or anything
+// you skipped.
+function minutesDone(r, now) {
+  let ms = r.activeMs || 0;
+  if (r.phase === "running" && r.blockRealStart) ms += (r.pausedAt ?? now) - r.blockRealStart;
+  return Math.max(0, ms) / 60000;
+}
+
+// Adds the block that just ended to the time on the clock.
+const closeBlock = (s, t) => (s.activeMs || 0) + (s.blockRealStart ? Math.max(0, t - s.blockRealStart) : 0);
+
+// Saves the workout to your exercise log, with a rough calorie burn.
+async function saveWorkout(workout, minutes) {
+  const mins = Math.round(minutes);
+  let weight = null;
+  try {
+    weight = (await getProfile())?.weight_kg;
+  } catch {}
+  await addActivity({
+    done_on: localDate(),
+    name: workout.name,
+    minutes: mins,
+    calories: estimateBurn(mins, weight),
+    source: "workout",
+  });
+}
 
 function clock(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -73,6 +109,15 @@ export default function Runner() {
 
   useWakeLock(run.phase === "running" || run.phase === "between");
 
+  // A finished workout saves itself once.
+  useEffect(() => {
+    if (!loaded || run.phase !== "done" || run.saved) return;
+    const mins = minutesDone(run, Date.now());
+    const keep = mins >= MIN_SAVE_MINUTES;
+    setRun((s) => ({ ...s, saved: true, savedMinutes: keep ? Math.round(mins) : 0 }));
+    if (keep) saveWorkout(workout, mins).catch(() => {});
+  }, [loaded, run.phase, run.saved]);
+
   // Starts the block the run is pointing at. Called by the Start button and
   // by the end of a timed transition.
   const beginBlock = (t = Date.now()) => {
@@ -87,7 +132,7 @@ export default function Runner() {
       say(`Go. ${Number.isInteger(mins) ? mins : mins.toFixed(1)} minutes.`);
     }
     setNow(t);
-    setRun((s) => ({ ...s, phase: "running", startedAt: t, pausedAt: null, pushStartedAt: null, betweenStartedAt: null }));
+    setRun((s) => ({ ...s, phase: "running", startedAt: t, blockRealStart: t, pausedAt: null, pushStartedAt: null, betweenStartedAt: null }));
   };
   const beginRef = useRef(beginBlock);
   beginRef.current = beginBlock;
@@ -184,6 +229,8 @@ export default function Runner() {
           setRun((s) => ({
             ...s,
             phase: "between",
+            activeMs: closeBlock(s, t0),
+            blockRealStart: null,
             lastBlock: s.block,
             block: s.block + 1,
             pushStartedAt: null,
@@ -191,7 +238,7 @@ export default function Runner() {
           }));
         } else {
           say(`Time. ${check}Workout done. Nice work.`);
-          setRun((s) => ({ ...s, phase: "done", lastBlock: s.block, pushStartedAt: null }));
+          setRun((s) => ({ ...s, phase: "done", lastBlock: s.block, pushStartedAt: null, activeMs: closeBlock(s, t0), blockRealStart: null }));
         }
       }
     };
@@ -231,6 +278,7 @@ export default function Runner() {
         ...s,
         pausedAt: null,
         startedAt: s.startedAt + d,
+        blockRealStart: s.blockRealStart ? s.blockRealStart + d : null,
         pushStartedAt: s.pushStartedAt ? s.pushStartedAt + d : null,
       };
     });
@@ -254,7 +302,16 @@ export default function Runner() {
   };
 
   const end = () => {
-    if ((run.phase === "running" || run.phase === "between") && !window.confirm("End this workout?")) return;
+    const midway = run.phase === "running" || run.phase === "between";
+    const mins = midway ? minutesDone(run, Date.now()) : 0;
+    if (midway) {
+      const note =
+        mins >= MIN_SAVE_MINUTES
+          ? `End this workout? Your ${Math.round(mins)} minutes will be saved.`
+          : `End this workout? Under ${MIN_SAVE_MINUTES} minutes, so it won't be saved.`;
+      if (!window.confirm(note)) return;
+      if (mins >= MIN_SAVE_MINUTES) saveWorkout(workout, mins).catch(() => {});
+    }
     stopVoice();
     try {
       localStorage.removeItem(key);
@@ -349,6 +406,11 @@ export default function Runner() {
       <main className="screen run">
         {header}
         <h1 className="run-title">Workout done</h1>
+        <p className="muted">
+          {run.savedMinutes
+            ? `${run.savedMinutes} minutes saved to today's exercise.`
+            : `Under ${MIN_SAVE_MINUTES} minutes on the clock, so it wasn't saved.`}
+        </p>
         {distanceBox}
         {logged.length > 0 && (
           <ol className="block-list">
