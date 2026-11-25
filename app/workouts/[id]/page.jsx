@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getWorkout, blockSeconds, workoutSeconds } from "../../../lib/workouts";
 import { useWakeLock } from "../../../lib/useWakeLock";
-import { unlockAudio, beep, say, stopVoice } from "../../../lib/voice";
+import { unlockAudio, beep, say, stopVoice, preloadLines } from "../../../lib/voice";
+import { LINES, allLines, endLine, goLine, pushLine } from "../../../lib/callouts";
 import { addActivity, getProfile, localDate } from "../../../lib/db";
 import { estimateBurn } from "../../../lib/nutrition";
 
@@ -65,7 +66,6 @@ function clock(ms) {
 }
 
 const isEasy = (label) => /^(Base|Walk|Rest)/.test(label);
-const introOf = (b) => b.intro ?? `${b.title}.`;
 
 // Where are we inside an intervals block, t ms after it started?
 function stepAt(block, t) {
@@ -109,6 +109,11 @@ export default function Runner() {
 
   useWakeLock(run.phase === "running" || run.phase === "between");
 
+  // Load this workout's recorded callouts ahead of time.
+  useEffect(() => {
+    if (workout) preloadLines(allLines(workout));
+  }, [workout]);
+
   // A finished workout saves itself once.
   useEffect(() => {
     if (!loaded || run.phase !== "done" || run.saved) return;
@@ -124,13 +129,8 @@ export default function Runner() {
     const idx = runRef.current.block;
     const b = workout.blocks[idx];
     fired.current = new Set();
-    if (b.type === "intervals") {
-      fired.current.add(`s-${idx}-0`);
-      say(b.steps[0].say);
-    } else {
-      const mins = b.sec / 60;
-      say(`Go. ${Number.isInteger(mins) ? mins : mins.toFixed(1)} minutes.`);
-    }
+    if (b.type === "intervals") fired.current.add(`s-${idx}-0`);
+    say(goLine(b));
     setNow(t);
     setRun((s) => ({ ...s, phase: "running", startedAt: t, blockRealStart: t, pausedAt: null, pushStartedAt: null, betweenStartedAt: null }));
   };
@@ -163,7 +163,7 @@ export default function Runner() {
           beep(true);
           beginRef.current(t0);
         } else {
-          if (secLeft <= 10 && secLeft > 7) once(`t10-${r.block}`, () => say("10 seconds. Get set."));
+          if (secLeft <= 10 && secLeft > 7) once(`t10-${r.block}`, () => say(LINES.getSet));
           if (secLeft <= 3) once(`tb-${r.block}-${secLeft}`, () => beep());
         }
         return;
@@ -197,10 +197,10 @@ export default function Runner() {
               say(fin.say);
             });
           } else if (fin && secLeft <= fin.sec + 10 && secLeft > fin.sec + 7) {
-            once(`f10-${r.block}`, () => say("Finisher in 10 seconds."));
+            once(`f10-${r.block}`, () => say(LINES.finisherSoon));
           }
-          if (!fin && secLeft <= 60 && secLeft > 57) once(`m1-${r.block}`, () => say("One minute left."));
-          if (secLeft <= 30 && secLeft > 27 && !(fin && fin.sec === 30)) once(`s30-${r.block}`, () => say("30 seconds left."));
+          if (!fin && secLeft <= 60 && secLeft > 57) once(`m1-${r.block}`, () => say(LINES.oneMinute));
+          if (secLeft <= 30 && secLeft > 27 && !(fin && fin.sec === 30)) once(`s30-${r.block}`, () => say(LINES.thirty));
           if (secLeft <= 3) once(`cb-${r.block}-${secLeft}`, () => beep());
 
           if (r.pushStartedAt && b.push) {
@@ -208,7 +208,7 @@ export default function Runner() {
             const pushSec = Math.ceil(pushLeft / 1000);
             if (pushLeft <= 0) {
               beep(true);
-              say("Back to the rower.");
+              say(LINES.backToRower);
               setRun((s) => ({ ...s, pushStartedAt: null }));
             } else if (pushSec <= 3) {
               once(`pb-${r.pushStartedAt}-${pushSec}`, () => beep());
@@ -220,12 +220,8 @@ export default function Runner() {
       if (blockOver) {
         beep(true);
         const next = workout.blocks[r.block + 1];
-        const check = b.logDistance ? "Check your rower distance. " : "";
+        say(endLine(workout, b, next));
         if (next) {
-          const when = workout.transitionSec
-            ? `${workout.transitionSec} seconds to get set.`
-            : "Tap start when ready.";
-          say(`Time. ${check}Next up, ${introOf(next)} ${when}`);
           setRun((s) => ({
             ...s,
             phase: "between",
@@ -237,7 +233,6 @@ export default function Runner() {
             betweenStartedAt: t0,
           }));
         } else {
-          say(`Time. ${check}Workout done. Nice work.`);
           setRun((s) => ({ ...s, phase: "done", lastBlock: s.block, pushStartedAt: null, activeMs: closeBlock(s, t0), blockRealStart: null }));
         }
       }
@@ -297,7 +292,7 @@ export default function Runner() {
 
   const startPush = () => {
     unlockAudio();
-    say(`Push. ${block.push.sec} seconds.`);
+    say(pushLine(block));
     setRun((s) => ({ ...s, pushStartedAt: Date.now() }));
   };
 
