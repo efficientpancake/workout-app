@@ -301,17 +301,31 @@ export default function Runner() {
     setRun((s) => ({ ...s, pushStartedAt: Date.now() }));
   };
 
+  // Ends the workout here and goes to the done screen, which saves the
+  // minutes you did (5 or more).
+  const finishEarly = () => {
+    const mins = minutesDone(run, Date.now());
+    const note =
+      mins >= MIN_SAVE_MINUTES
+        ? `End this workout? Your ${Math.round(mins)} minutes will be saved.`
+        : `End this workout? Under ${MIN_SAVE_MINUTES} minutes, so it won't be saved.`;
+    if (!window.confirm(note)) return;
+    stopVoice();
+    const t = Date.now();
+    setRun((s) => ({
+      ...s,
+      phase: "done",
+      endedEarly: true,
+      lastBlock: s.phase === "running" ? s.block : s.lastBlock,
+      activeMs: s.phase === "running" ? closeBlock(s, s.pausedAt ?? t) : s.activeMs || 0,
+      blockRealStart: null,
+      pausedAt: null,
+      pushStartedAt: null,
+    }));
+  };
+
   const end = () => {
-    const midway = run.phase === "running" || run.phase === "between";
-    const mins = midway ? minutesDone(run, Date.now()) : 0;
-    if (midway) {
-      const note =
-        mins >= MIN_SAVE_MINUTES
-          ? `End this workout? Your ${Math.round(mins)} minutes will be saved.`
-          : `End this workout? Under ${MIN_SAVE_MINUTES} minutes, so it won't be saved.`;
-      if (!window.confirm(note)) return;
-      if (mins >= MIN_SAVE_MINUTES) saveWorkout(workout, mins).catch(() => {});
-    }
+    if (run.phase === "running" || run.phase === "between") return finishEarly();
     stopVoice();
     try {
       localStorage.removeItem(key);
@@ -393,6 +407,9 @@ export default function Runner() {
         <button className="btn go big" onClick={startBlock}>
           {breakLeft !== null ? "Start now" : "Start"}
         </button>
+        <button className="btn end-workout" onClick={finishEarly}>
+          End workout
+        </button>
       </main>
     );
   }
@@ -405,7 +422,7 @@ export default function Runner() {
     return (
       <main className="screen run">
         {header}
-        <h1 className="run-title">Workout done</h1>
+        <h1 className="run-title">{run.endedEarly ? "Workout ended" : "Workout done"}</h1>
         <p className="muted">
           {run.savedMinutes
             ? `${run.savedMinutes} minutes saved to today's exercise.`
@@ -502,6 +519,9 @@ export default function Runner() {
           <button className="btn stop" onClick={pause}>Pause</button>
         )}
       </div>
+      <button className="btn end-workout" onClick={finishEarly}>
+        End workout
+      </button>
     </main>
   );
 }

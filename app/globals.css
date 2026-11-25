@@ -1292,6 +1292,18 @@ h3 {
   padding-top: 16px;
 }
 
+/* Quieter than the main controls so it isn't tapped by accident */
+.btn.end-workout {
+  flex: none;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 12px;
+  font-size: 18px;
+  color: var(--beet-chalk);
+  background: transparent;
+  border: 1.5px solid var(--board-3);
+}
+
 /* ---- Two-step sign-in ---- */
 .code-input {
   font-size: 28px;
