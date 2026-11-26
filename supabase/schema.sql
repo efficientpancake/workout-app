@@ -147,3 +147,7 @@ create policy "needs code" on public.plan_items as restrictive to authenticated
   using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
 create policy "needs code" on public.shopping_items as restrictive to authenticated
   using ((select auth.jwt()->>'aal') = 'aal2') with check ((select auth.jwt()->>'aal') = 'aal2');
+
+-- Newer Supabase projects don't let signed-in users reach new tables until
+-- they're granted. The rules above still limit each person to their own rows.
+grant select, insert, update, delete on all tables in schema public to authenticated;
