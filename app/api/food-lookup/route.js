@@ -8,7 +8,9 @@ import Anthropic from "@anthropic-ai/sdk";
 // Sonnet: plenty for reading a nutrition label, and cheaper than Opus.
 const MODEL = "claude-sonnet-5-5";
 
-const NUM = { type: ["number", "null"] };
+// No "number or null" types: the API limits those, so a missing value is -1
+// and a missing piece of text is "".
+const NUM = { type: "number" };
 const NUTRIENTS = {
   type: "object",
   additionalProperties: false,
@@ -23,14 +25,14 @@ const SCHEMA = {
   properties: {
     found: { type: "boolean" },
     name: { type: "string" },
-    brand: { type: ["string", "null"] },
-    servingLabel: { type: ["string", "null"] },
+    brand: { type: "string" },
+    servingLabel: { type: "string" },
     servingGrams: NUM,
-    per100g: { anyOf: [NUTRIENTS, { type: "null" }] },
-    perServing: { anyOf: [NUTRIENTS, { type: "null" }] },
-    sourceUrl: { type: ["string", "null"] },
-    sourceName: { type: ["string", "null"] },
-    note: { type: ["string", "null"] },
+    per100g: NUTRIENTS,
+    perServing: NUTRIENTS,
+    sourceUrl: { type: "string" },
+    sourceName: { type: "string" },
+    note: { type: "string" },
   },
 };
 
@@ -38,9 +40,9 @@ const SYSTEM = `You find the nutrition label for one food and report its numbers
 
 Search the web for the food the user names. Prefer, in this order: the brand's own website, a large supermarket's product page (Tesco, Sainsbury's, Waitrose, Ocado, Walmart, Target and similar), then a reputable nutrition site. Copy the numbers from the label as printed. Never estimate or average numbers yourself: if you can't find a label, set found to false.
 
-Fill in per100g and perServing when the label gives them (UK and EU labels usually give per 100 g; US labels give per serving). Units: kcal for energy (if only kJ is printed, divide by 4.184), grams for everything else. Salt in grams: if only sodium is given, salt = sodium x 2.5 (convert mg to g first). Use null for anything the label doesn't show. servingLabel is the serving as printed (for example "45 g" or "2/3 cup (55 g)"), and servingGrams is its weight in grams.
+Fill in per100g and perServing when the label gives them (UK and EU labels usually give per 100 g; US labels give per serving). Units: kcal for energy (if only kJ is printed, divide by 4.184), grams for everything else. Salt in grams: if only sodium is given, salt = sodium x 2.5 (convert mg to g first). Use -1 for any number the label doesn't show (if the label has no per 100 g column, set every per100g value to -1; same for perServing), and "" for any text you don't have. servingLabel is the serving as printed (for example "45 g" or "2/3 cup (55 g)"), and servingGrams is its weight in grams.
 
-If several flavors or sizes exist and the user didn't say which, pick the most common one and name it exactly in name, and say so in note. sourceUrl is the page the numbers came from; sourceName is that site's name. Keep note to one short sentence, or null.`;
+If several flavors or sizes exist and the user didn't say which, pick the most common one and name it exactly in name, and say so in note. sourceUrl is the page the numbers came from; sourceName is that site's name. Keep note to one short sentence, or "".`;
 
 // A web search can take 20-40 seconds; give it room before Vercel cuts it off.
 export const maxDuration = 60;
@@ -107,7 +109,7 @@ export async function POST(request) {
     if (!label.found) return Response.json({ found: false });
     const food = toFood(label);
     if (!food) return Response.json({ found: false });
-    return Response.json({ found: true, food, sourceUrl: label.sourceUrl, sourceName: label.sourceName, note: label.note });
+    return Response.json({ found: true, food, sourceUrl: label.sourceUrl || null, sourceName: label.sourceName || null, note: label.note || null });
   } catch (err) {
     console.error("food-lookup:", err);
     if (err instanceof Anthropic.RateLimitError) return Response.json({ error: "busy" }, { status: 503 });
@@ -121,7 +123,7 @@ export async function POST(request) {
   }
 }
 
-const r1 = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v * 10) / 10 : null);
+const r1 = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? Math.round(v * 10) / 10 : null);
 const clean = (n) => n && { kcal: r1(n.kcal) == null ? null : Math.round(n.kcal), protein: r1(n.protein), carbs: r1(n.carbs), sugar: r1(n.sugar), fat: r1(n.fat), fiber: r1(n.fiber), salt: r1(n.salt) };
 
 // Into the app's food shape. Per 100 g when the label has it (so grams work),
