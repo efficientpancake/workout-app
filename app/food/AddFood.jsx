@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { NUTRIENTS, describeAmount, totalsFor } from "../../lib/nutrition";
+import { NUTRIENTS, describeAmount, servingWord, totalsFor } from "../../lib/nutrition";
 
 // Pick how much you ate, see the totals, add it.
 export default function AddFood({ food, initial, onAdd, onCancel, busy, addLabel = "Add" }) {
@@ -10,6 +10,9 @@ export default function AddFood({ food, initial, onAdd, onCancel, busy, addLabel
   const canUseGrams = food.basis === "per100g";
   const totals = totalsFor(food, amount, unit);
   const valid = Number(amount) > 0;
+  // "Cups" instead of "Servings" when one serving is 1 cup.
+  const word = servingWord(food);
+  const servingsLabel = word ? word[0].toUpperCase() + word.slice(1) : "Servings";
 
   const switchUnit = (u) => {
     if (u === unit) return;
@@ -22,7 +25,10 @@ export default function AddFood({ food, initial, onAdd, onCancel, busy, addLabel
     <div className="add-food">
       <h2 className="food-name">{food.name}</h2>
       {food.brand && <p className="muted">{food.brand}</p>}
-      {food.servingLabel && <p className="muted small">Serving: {food.servingLabel}</p>}
+      {food.servingLabel && !word && <p className="muted small">Serving: {food.servingLabel}</p>}
+      {food.source === "usda" && (
+        <p className="muted small">A typical recipe from the USDA. Your best guess at the amount is fine.</p>
+      )}
 
       <div className="amount-row">
         <input
@@ -39,7 +45,7 @@ export default function AddFood({ food, initial, onAdd, onCancel, busy, addLabel
               onClick={() => switchUnit("serving")}
               disabled={!food.servingGrams}
             >
-              Servings
+              {servingsLabel}
             </button>
             <button type="button" className={unit === "g" ? "on" : ""} onClick={() => switchUnit("g")}>
               Grams

@@ -5,7 +5,7 @@ import Scanner from "./Scanner";
 import AddFood from "./AddFood";
 import ManualFood from "./ManualFood";
 import { addFavorite, foodKey, listFavorites, recentFoods, removeFavorite } from "../../lib/db";
-import { defaultAmount, describeAmount, lookupBarcode, searchFoods, totalsFor } from "../../lib/nutrition";
+import { defaultAmount, describeAmount, lookupBarcode, searchFoods, servingWord, totalsFor } from "../../lib/nutrition";
 
 // Find a food and pick how much: scan, search, your meals, favorites, recent,
 // or type it in. Used by the Food tab (log it), and the Plan tab (add it to a
@@ -102,9 +102,11 @@ export default function FoodPicker({
     setStatus("Searching...");
     setResults(null);
     try {
-      const foods = await searchFoods(query.trim());
-      setResults(foods);
-      setStatus(foods.length ? "" : "Nothing found. Try fewer words, or add it yourself.");
+      const r = await searchFoods(query.trim());
+      setResults(r);
+      setStatus(
+        r.dishes.length || r.packaged.length ? r.trouble : "Nothing found. Try fewer words, or add it yourself."
+      );
     } catch (err) {
       setStatus(err.message);
     }
@@ -200,8 +202,19 @@ export default function FoodPicker({
 
       {status && <p className="muted">{status}</p>}
 
-      {results && results.length > 0 && (
-        <FoodList title="Results" items={results.map((food) => ({ food }))} onPick={(it) => pick(it.food)} />
+      {results && (
+        <>
+          <FoodList
+            title="Dishes and basic foods"
+            items={results.dishes.map((food) => ({ food }))}
+            onPick={(it) => pick(it.food)}
+          />
+          <FoodList
+            title="Packaged foods"
+            items={results.packaged.map((food) => ({ food }))}
+            onPick={(it) => pick(it.food)}
+          />
+        </>
       )}
 
       {!results &&
@@ -263,7 +276,9 @@ function FoodList({ title, items, onPick, onQuick, isFav, onStar }) {
             : [
                 it.food.brand,
                 it.food.nutrients.kcal != null &&
-                  `${Math.round(it.food.nutrients.kcal)} cal ${it.food.basis === "per100g" ? "per 100 g" : "per serving"}`,
+                  (servingWord(it.food, 1)
+                    ? `${totalsFor(it.food, 1, "serving").calories} cal per ${servingWord(it.food, 1)}`
+                    : `${Math.round(it.food.nutrients.kcal)} cal ${it.food.basis === "per100g" ? "per 100 g" : "per serving"}`),
               ];
           return (
             <li key={`${foodKey(it.food)}-${i}`} className={onQuick ? "with-actions" : ""}>
