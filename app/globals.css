@@ -866,6 +866,10 @@ h3 {
   margin: 16px 0 0;
 }
 
+.look-online {
+  margin: 4px 0 8px;
+}
+
 .login form {
   margin-top: 24px;
 }

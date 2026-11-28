@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { NUTRIENTS, describeAmount, servingWord, totalsFor } from "../../lib/nutrition";
 
+const hostOf = (url) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "the source";
+  }
+};
+
 // Pick how much you ate, see the totals, add it.
 export default function AddFood({ food, initial, onAdd, onCancel, busy, addLabel = "Add" }) {
   const [amount, setAmount] = useState(String(initial.amount));
@@ -26,6 +34,20 @@ export default function AddFood({ food, initial, onAdd, onCancel, busy, addLabel
       <h2 className="food-name">{food.name}</h2>
       {food.brand && <p className="muted">{food.brand}</p>}
       {food.servingLabel && !word && <p className="muted small">Serving: {food.servingLabel}</p>}
+      {food.source === "web" && (
+        <p className="muted small">
+          Found online
+          {food.sourceUrl && (
+            <>
+              {" at "}
+              <a href={food.sourceUrl} target="_blank" rel="noreferrer">
+                {hostOf(food.sourceUrl)}
+              </a>
+            </>
+          )}
+          . Check it against the bag if you have it.
+        </p>
+      )}
       {food.source === "usda" && (
         <p className="muted small">A typical recipe from the USDA. Your best guess at the amount is fine.</p>
       )}

@@ -5,7 +5,7 @@ import Scanner from "./Scanner";
 import AddFood from "./AddFood";
 import ManualFood from "./ManualFood";
 import { addFavorite, foodKey, listFavorites, recentFoods, removeFavorite } from "../../lib/db";
-import { defaultAmount, describeAmount, lookupBarcode, searchFoods, servingWord, totalsFor } from "../../lib/nutrition";
+import { defaultAmount, describeAmount, lookupBarcode, lookupOnline, searchFoods, servingWord, totalsFor } from "../../lib/nutrition";
 
 // Find a food and pick how much: scan, search, your meals, favorites, recent,
 // or type it in. Used by the Food tab (log it), and the Plan tab (add it to a
@@ -30,6 +30,7 @@ export default function FoodPicker({
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState("");
+  const [looking, setLooking] = useState(false);
 
   const keep = (list) => (excludeMeals ? list.filter((it) => it.food.source !== "meal") : list);
 
@@ -105,11 +106,27 @@ export default function FoodPicker({
       const r = await searchFoods(query.trim());
       setResults(r);
       setStatus(
-        r.dishes.length || r.packaged.length ? r.trouble : "Nothing found. Try fewer words, or add it yourself."
+        r.dishes.length || r.packaged.length ? r.trouble : "Nothing in the free food databases. Look it up online, or add it yourself."
       );
     } catch (err) {
       setStatus(err.message);
     }
+  };
+
+  // Ask the app to find the label online (a few cents each time).
+  const lookOnline = async () => {
+    const q = query.trim();
+    if (!q) return;
+    setLooking(true);
+    setStatus("Looking it up online. This takes about 20 seconds...");
+    try {
+      const r = await lookupOnline(q);
+      if (r.found) pick(r.food);
+      else setStatus(`Couldn't find a nutrition label for "${q}" online. Try adding the brand, or add it yourself.`);
+    } catch (err) {
+      setStatus(err.message);
+    }
+    setLooking(false);
   };
 
   const save = async ({ amount, unit }) => {
@@ -204,6 +221,9 @@ export default function FoodPicker({
 
       {results && (
         <>
+          <button className="btn big look-online" onClick={lookOnline} disabled={looking}>
+            {looking ? "Looking it up..." : `Not here? Look up "${query.trim()}" online`}
+          </button>
           <FoodList
             title="Dishes and basic foods"
             items={results.dishes.map((food) => ({ food }))}
